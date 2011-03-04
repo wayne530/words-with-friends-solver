@@ -1,0 +1,4 @@
+Given a board layout described by 2 single digit integers representing
+letter and word multipliers, a valid word list, and the current state
+of the board, this will find the optimal (highest scoring) move with
+the available letters.
