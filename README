@@ -5,3 +5,74 @@ the available letters.
 
 Use an '_' to represent a wildcard tile. Scores are appropriately
 computed if a wildcard is used.
+
+Commands:
+
+A <row>,<col> <dir=V|H> <word> [<wildcard positions,...>]
+Add a word starting at row <row> and column <col> (0-based) in the
+specified direction (V=vertical, H=horizontal), optionally
+identifying tiles in the word formed using wildcard tiles.
+This isn't strictly required, but is needed for correct scoring
+and subsequent plays that involve the wildcard tile. Wildcard
+positions are specified as 0-based letter positions in <word>.
+
+F <rack>
+Find the highest scoring word that can be played with the
+current board and the letters identified by <rack>.
+
+R
+Reset the board.
+
+P
+Print the current board state.
+
+S [<game name>]
+Save the current board state with the given name. If the board has
+been previously saved or was loaded from an existing saved game,
+the <game name> is not required as it'll be assumed to be the same.
+
+L <game name>
+Load a saved game state.
+
+
+
+[19:01 whuang@wynn:~/words] ./parse_board.pl ENABLE1 board.wwf
+Building word trie [ENABLE1] ...
+Parsed board weights [board.wwf] 15x15
+> L SETH
+Resetting current board state
+Loading move state from [SETH]
+Added word [GONE] horizontally starting at (7, 11) for 7 points
+Added word [NIOBATE] vertically starting at (14, 9) for 26 points
+Added word [OX] vertically starting at (9, 8) for 18 points
+Added word [WINERIES] vertically starting at (9, 10) for 61 points
+Added word [ED] vertically starting at (12, 10) for 11 points
+Added word [REGLOW] horizontally starting at (1, 11) for 48 points
+> A 0,5 H OP
+Added word [OP] horizontally starting at (0, 7) for 28 points
+> S
+Move state stored to [SETH]
+> F EEDCNAI
+Finding optimal across move...
+Finding optimal down move...
+Play DECENNIA horizontally anchored at position (3, 6) for 71 points.
+. . . . . O P . . . . . . . .
+. . . . . R E G L O W . . . .
+. . . . . . . . . . I . . . .
+. . . . . . D E C E N N I A .
+. . . . . . . . . . E . . . .
+. . . . . . . . . . R . . . .
+. . . . . . . . . . I . . . .
+. . . . . . . G O N E . . . .
+. . . . . . . . X I S . . . .
+. . . . . . . . . O . . . . .
+. . . . . . . . . B E . . . .
+. . . . . . . . . A D . . . .
+. . . . . . . . . T . . . . .
+. . . . . . . . . E . . . . .
+. . . . . . . . . . . . . . .
+> A 3,6 H DECENNIA
+Added word [DECENNIA] horizontally starting at (3, 14) for 71 points
+> S
+Move state stored to [SETH]
+
