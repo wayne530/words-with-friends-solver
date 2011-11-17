@@ -43,8 +43,8 @@ if (! defined($file) || ! defined($boardFile)) {
 }
 
 my $trie = buildWordTrie($file);
-my ($board, $numRows, $numCols) = parseBoard($boardFile);
-my $state = {'scores' => \%scores, 'board' => $board, 'numRows' => $numRows, 'numCols' => $numCols, 'trie' => $trie, 'moves' => [], 'allLetterBonus' => 35, 'rackSize' => 7};
+my $state = parseBoard($boardFile);
+$state->{'trie'} = $trie;
 if (defined($stateFile)) {
     $stateFile = uc($stateFile);
     $state = loadState($state, $stateFile);
@@ -965,22 +965,49 @@ sub parseBoard {
 	my $file = shift;
 	local *IN;
 	my @board = ();
+	my %params = ();
 	my $colCount = undef;
 	open(IN, "<$file");
 	while(<IN>) {
 		chomp;
-		my @rowRaw = split(/,/, $_);
-		my @row = ();
-		if (! defined($colCount)) { $colCount = scalar(@rowRaw); }
-		foreach my $cell (@rowRaw) {
-		    my @cellData = split(//, $cell);
-		    my %cell = ('letterWeight' => $cellData[0], 'wordWeight' => $cellData[1], 'bonusUsed' => 0);
-		    push(@row, \%cell);
-		}
-		push(@board, \@row);
+		if (/^!(\w+)\s+(.+)$/) {
+		    print STDERR $1, ' => ', $2, "\n";
+		    $params{$1} = $2;
+		} else {
+            my @rowRaw = split(/,/, $_);
+            my @row = ();
+            if (! defined($colCount)) { $colCount = scalar(@rowRaw); }
+            foreach my $cell (@rowRaw) {
+                my @cellData = split(//, $cell);
+                my %cell = ('letterWeight' => $cellData[0], 'wordWeight' => $cellData[1], 'bonusUsed' => 0);
+                push(@row, \%cell);
+            }
+            push(@board, \@row);
+        }
 	}
 	close(IN);
 	my $rowCount = scalar(@board);
 	print STDERR "Parsed board weights [$file] ${rowCount}x${colCount}\n";
-	return (\@board, $rowCount, $colCount);
+
+	# parse letterScores
+	if (! exists($params{'letterScores'})) {
+	    die("Invalid board [$file]\n");
+	}
+	my $letterScoresFlat = $params{'letterScores'};
+	my @letterScores = split(/\s*,\s*/, $letterScoresFlat);
+	my %scores = ();
+	foreach my $pair (@letterScores) {
+	    my ($letter, $score) = split(/\s*:\s*/, $pair, 2);
+	    $scores{$letter} = $score;
+	}
+
+    return {
+        'scores' => \%scores,
+        'board' => \@board,
+        'numRows' => $rowCount,
+        'numCols' => $colCount,
+        'moves' => [],
+        'allLetterBonus' => $params{'allLetterBonus'},
+        'rackSize' => $params{'rackSize'}
+    };
 }
