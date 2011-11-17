@@ -215,7 +215,6 @@ sub _findOptimalMoveProper {
     my $bestMove = undef;
 
     my @validLeftParts = sort { length($a) <=> length($b) } ('', generateAllValidLeftParts(\@rack, scalar(@rack), $trie));
-    print join(",", @validLeftParts), "\n";
 
     foreach my $anchor (@{$anchors}) {
         my ($i, $j) = @{$anchor};
