@@ -92,6 +92,7 @@ sub processCommand {
 }
 
 sub scoreMove {
+    my $rack = shift;
     my $state = shift;
     my $left_i = shift;
     my $left_j = shift;
@@ -102,6 +103,15 @@ sub scoreMove {
     my $print = shift;
     $print = 0
         if (! defined($print));
+
+    # build avail letter=>count hash
+    my %avail = ();
+    foreach my $l (@{$rack}) {
+        $avail{$l}++;
+    }
+    # letters needing wildcard
+    my %needsWildcard = ();
+    my %letterPosition = ();
 
     # save row state
     my @origRowState = ();
@@ -115,8 +125,21 @@ sub scoreMove {
         my $numLetters = scalar(@letters);
         for (my $k = 0; $k < $numLetters; $k++) {
             my $j = $left_j + $k;
-            $state->{board}->[$left_i]->[$j]->{letter} = $letters[$k];
+            my $l = $letters[$k];
+            $state->{board}->[$left_i]->[$j]->{letter} = $l;
             $state->{board}->[$left_i]->[$j]->{placed} = 1;
+            if (! exists($letterPosition{$l})) {
+                $letterPosition{$l} = [];
+            }
+            push(@{$letterPosition{$l}}, [$left_i, $j]);
+            if (exists($avail{$l}) && ($avail{$l} > 0)) {
+                $avail{$l}--;
+            } elsif (exists($avail{'_'}) && ($avail{'_'} > 0)) {
+                $avail{'_'}--;
+                $needsWildcard{$l}++;
+            } else {
+                print STDERR "ERROR: leftPart [$leftPart] contains letter [$l] which isn't in the rack"
+            }
         }
     }
     if (length($rightPart) > 0) {
@@ -124,17 +147,51 @@ sub scoreMove {
         my $numLetters = scalar(@letters);
         for (my $k = 0; $k < $numLetters; $k++) {
             my $j = $right_j + $k;
+            my $l = $letters[$k];
             if (! exists($state->{board}->[$right_i]->[$j]->{letter})) {
-                $state->{board}->[$right_i]->[$j]->{letter} = $letters[$k];
+                $state->{board}->[$right_i]->[$j]->{letter} = $l;
                 $state->{board}->[$right_i]->[$j]->{placed} = 1;
+                if (! exists($letterPosition{$l})) {
+                    $letterPosition{$l} = [];
+                }
+                push(@{$letterPosition{$l}}, [$right_i, $j]);
+                if (exists($avail{$l}) && ($avail{$l} > 0)) {
+                    $avail{$l}--;
+                } elsif (exists($avail{'_'}) && ($avail{'_'} > 0)) {
+                    $avail{'_'}--;
+                    $needsWildcard{$l}++;
+                } else {
+                    print STDERR "ERROR: leftPart [$leftPart] contains letter [$l] which isn't in the rack"
+                }
             }
         }
     }
 
+    # set wildcard 0 point positions based on lowest impact to overall score
+    my @modified = ();
+    foreach my $l (keys(%needsWildcard)) {
+        my $num = $needsWildcard{$l};
+        my $letterPositions = $letterPosition{$l};
+        my @positions = sort { $state->{board}->[$a->[0]]->[$a->[1]]->{letterWeight} <=> $state->{board}->[$b->[0]]->[$b->[1]]->{letterWeight} } @{$letterPositions};
+        for (my $k = 0; $k < $num; $k++) {
+            my $position = $positions[$k];
+            my ($i, $j) = @{$position};
+            push(@modified, [$i, $j]);
+            $state->{board}->[$i]->[$j]->{points} = 0;
+        }
+    }
+
     my $points = computePoints($state, $left_i, $left_j, 'H', 1);
-    if ($print) { printBoard($state); }
+    if ($print) {
+        print join('', keys(%needsWildcard)) . "\n";
+        printBoard($state);
+    }
 
     # restore row state
+    foreach my $m (@modified) {
+        my ($i, $j, $origPoints) = @{$m};
+        delete($state->{board}->[$i]->[$j]->{points});
+    }
     for (my $j = 0; $j < $state->{numCols}; $j++) {
         if (! $origRowState[$j] && exists($state->{board}->[$left_i]->[$j]->{letter})) {
             delete($state->{board}->[$left_i]->[$j]->{letter});
@@ -169,10 +226,10 @@ sub _findOptimalMoveProper {
         }
         my $maxLeftPartLen = $j - $start_j + ($start_j == 0 ? 1 : 0);
         #print "maxLeftPartLen:[$maxLeftPartLen]\n";
-	#if ($i == 11 && $j == 2) { print "Anchor ($i, $j) middlePart:[$middlePart] start_j:[$start_j] maxLeftPartLen:[$maxLeftPartLen]\n"; }
+	    #if ($i == 11 && $j == 2) { print "Anchor ($i, $j) middlePart:[$middlePart] start_j:[$start_j] maxLeftPartLen:[$maxLeftPartLen]\n"; }
         if ($maxLeftPartLen > 0) {
             foreach my $leftPart (generateLeftParts(\@rack, $maxLeftPartLen)) {
-		#if ($i == 11 && $j == 2) { print "\t - leftPart:[$leftPart]\n"; }
+		        #if ($i == 11 && $j == 2) { print "\t - leftPart:[$leftPart]\n"; }
                 my $leftPartLen = length($leftPart);
                 my @letters = split(//, $leftPart);
                 my $invalid = 0;
@@ -195,16 +252,33 @@ sub _findOptimalMoveProper {
                             if ($right_j >= $numCols) {
                                 # can't - see if it's valid
                                 if (length($leftPart) > 0 && exists($prefixNode->{_valid}) && $prefixNode->{_valid}) {
-                                    my $points = scoreMove($state, $i, $j - length($leftPart) + 1, $leftPart, $i, $j + 1 + length($middlePart), '');
-                                    if (! exists($skips->{$prefix}) && (! defined($bestMove) || ($points > $bestMove->{points}))) {
-                                        $bestMove = {'points' => $points, 'i' => $i, 'j' => $j, 'word' => $prefix, 'left_i' => $i, 'left_j' => $j - length($leftPart) + 1, 'leftPart' => $leftPart, 'right_i' => $i, 'right_j' => $j + 1 + length($middlePart), 'rightPart' => ''};
+                                    my $points = scoreMove(\@rack, $state, $i, $j - length($leftPart) + 1, $leftPart, $i, $j + 1 + length($middlePart), '');
+                                    my $start_j = $j;
+                                    my $start_i = $i;
+                                    if (length($leftPart) == 0) {
+                                        $start_j++;
+                                    } else {
+                                        $start_j -= (length($leftPart) - 1);
                                     }
-                                    print "($i, $j) leftPart:[$leftPart] middlePart:[$middlePart] => [$prefix] - VALID (score $points)\n";
+                                    if (! exists($skips->{$prefix}) && (! defined($bestMove) || ($points > $bestMove->{points}))) {
+                                        $bestMove = {'points' => $points, 'start_i' => $start_i, 'start_j' => $start_j, 'i' => $i, 'j' => $j, 'word' => $prefix, 'left_i' => $i, 'left_j' => $j - length($leftPart) + 1, 'leftPart' => $leftPart, 'right_i' => $i, 'right_j' => $j + 1 + length($middlePart), 'rightPart' => ''};
+                                    }
+                                    print "($start_i, $start_j) leftPart:[$leftPart] middlePart:[$middlePart] => [$prefix] - VALID (score $points)\n";
                                 }
                             } else {
                                 my %avail = ();
                                 foreach my $l (@rack) { $avail{$l}++; }
-                                foreach my $l (split(//, $leftPart)) { $avail{$l}--; }
+                                foreach my $l (split(//, $leftPart)) {
+                                    # handle wildcard '_' availability
+                                    if ((! exists($avail{$l}) || ($avail{$l} < 1)) && (exists($avail{'_'}) && ($avail{'_'} > 0))) {
+                                        # use one wildcard
+                                        $avail{'_'}--;
+                                    } elsif (exists($avail{$l}) && ($avail{$l} > 0)) {
+                                        $avail{$l}--;
+                                    } else {
+                                        print STDERR "ERROR: leftPart [$leftPart] contains letter [$l] which isn't available in the rack!\n";
+                                    }
+                                }
                                 my @rest = ();
                                 foreach my $l (keys(%avail)) {
                                     for (my $z = 0; $z < $avail{$l}; $z++) {
@@ -215,11 +289,18 @@ sub _findOptimalMoveProper {
                                 #if ($i == 11 && $j == 2) { print "rest:[", join(",", @rest), "] numRightParts:[", scalar(@rightParts), "] rightParts:[", join(",", @rightParts), "]\n"; }
                                 foreach my $rightPart (@rightParts) {
                                     if (length($rightPart) > 0 || (length($leftPart) > 0 && validWord($state->{trie}, $prefix))) {
-                                        my $points = scoreMove($state, $i, $j - length($leftPart) + 1, $leftPart, $i, $j + 1 + length($middlePart), $rightPart);
-                                        if (! exists($skips->{$prefix . $rightPart}) && (! defined($bestMove) || ($points > $bestMove->{points}))) {
-                                            $bestMove = {'points' => $points, 'i' => $i, 'j' => $j, 'word' => $prefix . $rightPart, 'left_i' => $i, 'left_j' => $j - length($leftPart) + 1, 'leftPart' => $leftPart, 'right_i' => $i, 'right_j' => $j + 1 + length($middlePart), 'rightPart' => $rightPart};
+                                        my $points = scoreMove(\@rack, $state, $i, $j - length($leftPart) + 1, $leftPart, $i, $j + 1 + length($middlePart), $rightPart);
+                                        my $start_j = $j;
+                                        my $start_i = $i;
+                                        if (length($leftPart) == 0) {
+                                            $start_j++;
+                                        } else {
+                                            $start_j -= (length($leftPart) - 1);
                                         }
-                                        print "($i, $j) left:[$leftPart] middle:[$middlePart] right:[$rightPart] => [$prefix${rightPart}] - VALID (score $points)\n";
+                                        if (! exists($skips->{$prefix . $rightPart}) && (! defined($bestMove) || ($points > $bestMove->{points}))) {
+                                            $bestMove = {'points' => $points, 'start_i' => $start_i, 'start_j' => $start_j, 'i' => $i, 'j' => $j, 'word' => $prefix . $rightPart, 'left_i' => $i, 'left_j' => $j - length($leftPart) + 1, 'leftPart' => $leftPart, 'right_i' => $i, 'right_j' => $j + 1 + length($middlePart), 'rightPart' => $rightPart};
+                                        }
+                                        print "($start_i, $start_j) left:[$leftPart] middle:[$middlePart] right:[$rightPart] => [$prefix${rightPart}] - VALID (score $points)\n";
                                     }
                                 }
                             }
@@ -268,7 +349,7 @@ sub findOptimalMove {
 #    }
     my $down = _findOptimalMoveProper($state, $rack, $anchors, $crossChecks, \%skip);
     if (defined($down)) {
-        ($down->{i}, $down->{j}) = ($down->{j}, $down->{i});
+        ($down->{start_i}, $down->{start_j}) = ($down->{start_j}, $down->{start_i});
         $down->{dir} = "vertically";
     }
 
@@ -292,8 +373,9 @@ sub findOptimalMove {
 
     if ($transposeFirst) { $state = boardReverseTranspose($state); }
     if (defined($highest)) {
-        print "Play ", $highest->{word}, " ", $highest->{dir}, " anchored at position (", $highest->{i}, ", ", $highest->{j}, ") for ", $highest->{points}, " points.\n";
-        scoreMove($state, $highest->{left_i}, $highest->{left_j}, $highest->{leftPart}, $highest->{right_i}, $highest->{right_j}, $highest->{rightPart}, 1);
+        print "Play ", $highest->{word}, " ", $highest->{dir}, " anchored at position (", $highest->{start_i}, ", ", $highest->{start_j}, ") for ", $highest->{points}, " points.\n";
+        my @rack = split(//, $rack);
+        scoreMove(\@rack, $state, $highest->{left_i}, $highest->{left_j}, $highest->{leftPart}, $highest->{right_i}, $highest->{right_j}, $highest->{rightPart}, 1);
     } else {
         print "No move possible.\n";    
     }
@@ -603,22 +685,37 @@ sub findRightParts {
 		for (my $k = 0; $k < $numRest; $k++) {
 			my $l = $rest->[$k];
 			my $coord = $i . "," . $j;
-			#print "findRightParts ($i, $j) suffix:[$suffix] k:[$k] rest:[", join(@{$rest}), "]\n";
-			next if (exists($crossChecks->{$coord}) && ! exists($crossChecks->{$coord}->{$l}));
-			if (exists($nodePrefix->{$l})) {
-				my @newrest = ();
-				push(@newrest, @{$rest}[0..$k-1]) if ($k > 0);
-				push(@newrest, @{$rest}[$k+1..$numRest-1]) if ($k < $numRest - 1);
-				if (($j < $numCols - 1) && exists($nodePrefix->{$l}->{_valid}) && ! exists($board->[$i]->[$j + 1]->{letter})) {
-                    push(@parts, $suffix . $l); 				
-				}
-				push(@parts, findRightParts($suffix . $l, $nodePrefix->{$l}, \@newrest, $board, $i, $j + 1, $numCols, $crossChecks));
-			}
+			if ($l ne '_') {
+                #print "findRightParts ($i, $j) suffix:[$suffix] k:[$k] rest:[", join(@{$rest}), "]\n";
+                next if (exists($crossChecks->{$coord}) && ! exists($crossChecks->{$coord}->{$l}));
+                if (exists($nodePrefix->{$l})) {
+                    my @newrest = ();
+                    push(@newrest, @{$rest}[0..$k-1]) if ($k > 0);
+                    push(@newrest, @{$rest}[$k+1..$numRest-1]) if ($k < $numRest - 1);
+                    if (($j < $numCols - 1) && exists($nodePrefix->{$l}->{_valid}) && ! exists($board->[$i]->[$j + 1]->{letter})) {
+                        push(@parts, $suffix . $l);
+                    }
+                    push(@parts, findRightParts($suffix . $l, $nodePrefix->{$l}, \@newrest, $board, $i, $j + 1, $numCols, $crossChecks));
+                }
+            } else {
+                foreach my $l (qw/A B C D E F G H I J K L M N O P Q R S T U V W X Y Z/) {
+                    next if (exists($crossChecks->{$coord}) && ! exists($crossChecks->{$coord}->{$l}));
+                    if (exists($nodePrefix->{$l})) {
+                        my @newrest = ();
+                        push(@newrest, @{$rest}[0..$k-1]) if ($k > 0);
+                        push(@newrest, @{$rest}[$k+1..$numRest-1]) if ($k < $numRest - 1);
+                        if (($j < $numCols - 1) && exists($nodePrefix->{$l}->{_valid}) && ! exists($board->[$i]->[$j + 1]->{letter})) {
+                            push(@parts, $suffix . $l);
+                        }
+                        push(@parts, findRightParts($suffix . $l, $nodePrefix->{$l}, \@newrest, $board, $i, $j + 1, $numCols, $crossChecks));
+                    }
+                }
+            }
 		}
 	} else {
 		if (exists($nodePrefix->{$board->[$i]->[$j]->{letter}})) {
 			push(@parts, findRightParts($suffix . $board->[$i]->[$j]->{letter}, $nodePrefix->{$board->[$i]->[$j]->{letter}}, $rest, $board, $i, $j + 1, $numCols, $crossChecks));
-                }
+        }
 	}
 	return @parts;
 }
@@ -645,7 +742,19 @@ sub _generateLeftPartsProper {
 	#print STDERR "_generateLeftPartsProper(", join("", @{$rack}), ", $len)\n";
 	my $rackSize = scalar(@{$rack});
 	if ($len == 0) { return ['']; }
-	if ($len == 1) { return $rack; }
+	if ($len == 1) {
+	    my @leftParts = ();
+	    foreach my $letter (@{$rack}) {
+	        if ($letter ne '_') {
+	            push(@leftParts, $letter);
+	        } else {
+			    foreach my $letter (qw/A B C D E F G H I J K L M N O P Q R S T U V W X Y Z/) {
+			        push(@leftParts, $letter);
+			    }
+			}
+	    }
+	    return \@leftParts;
+	}
 
 	for (my $i = 0; $i < $rackSize; $i++) {
 		my @letters = @{$rack};
@@ -655,7 +764,13 @@ sub _generateLeftPartsProper {
 		push(@rest, @letters[$i+1..$rackSize-1])	if ($i < $rackSize - 1);
 		#print STDERR "   [", join("", @letters), "] $i -> $letter [", join("", @rest), "]\n";
 		foreach my $suffix (@{_generateLeftPartsProper(\@rest, $len - 1)}) {
-			push(@leftParts, $letter . $suffix);
+		    if ($letter ne '_') {
+			    push(@leftParts, $letter . $suffix);
+			} else {
+			    foreach my $letter (qw/A B C D E F G H I J K L M N O P Q R S T U V W X Y Z/) {
+			        push(@leftParts, $letter . $suffix);
+			    }
+			}
 		}
 	}
 	return \@leftParts;
