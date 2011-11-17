@@ -183,7 +183,6 @@ sub scoreMove {
 
     my $points = computePoints($state, $left_i, $left_j, 'H', 1);
     if ($print) {
-        print join('', keys(%needsWildcard)) . "\n";
         printBoard($state);
     }
 
@@ -215,6 +214,9 @@ sub _findOptimalMoveProper {
     my @rack = split(//, $rack);
     my $bestMove = undef;
 
+    my @validLeftParts = sort { length($a) <=> length($b) } ('', generateAllValidLeftParts(\@rack, scalar(@rack), $trie));
+    print join(",", @validLeftParts), "\n";
+
     foreach my $anchor (@{$anchors}) {
         my ($i, $j) = @{$anchor};
         #print "Anchor ($i, $j)\n";
@@ -228,7 +230,8 @@ sub _findOptimalMoveProper {
         #print "maxLeftPartLen:[$maxLeftPartLen]\n";
 	    #if ($i == 11 && $j == 2) { print "Anchor ($i, $j) middlePart:[$middlePart] start_j:[$start_j] maxLeftPartLen:[$maxLeftPartLen]\n"; }
         if ($maxLeftPartLen > 0) {
-            foreach my $leftPart (generateLeftParts(\@rack, $maxLeftPartLen)) {
+            foreach my $leftPart (@validLeftParts) {
+                last if (length($leftPart) > $maxLeftPartLen);
 		        #if ($i == 11 && $j == 2) { print "\t - leftPart:[$leftPart]\n"; }
                 my $leftPartLen = length($leftPart);
                 my @letters = split(//, $leftPart);
@@ -787,6 +790,35 @@ sub generateLeftParts {
 		}
 	}
 	return keys(%unique);
+}
+
+sub generateAllValidLeftParts {
+    my $rack = shift;
+    my $rackLen = shift;
+    my $trie = shift;
+    my $prefix = shift;
+    $prefix = ''    if (! defined($prefix));
+    my $prefixLen = length($prefix);
+
+    if ($rackLen == 0) {
+        return ();
+    }
+
+    my @valid = ();
+    for (my $i = 0; $i < $rackLen; $i++) {
+        my $letter = $rack->[$i];
+        my $newPrefix = $prefix . $letter;
+        my $node = getPrefixNode($trie, $newPrefix);
+        if (defined($node)) {
+            push(@valid, $newPrefix);
+            my @restRack = ();
+            for (my $j = 0; $j < $rackLen; $j++) {
+                push(@restRack, $rack->[$j])    if ($j != $i);
+            }
+            push(@valid, generateAllValidLeftParts(\@restRack, $rackLen - 1, $trie, $newPrefix));
+        }
+    }
+    return @valid;
 }
 
 sub _getTopPart {
