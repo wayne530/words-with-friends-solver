@@ -587,7 +587,7 @@ sub addWordVerticallyToBoard {
         $i++;
     }
     my $points = computePoints($state, $start_i, $j, 'V', 1);
-    print "Added word [$word] vertically starting at ($i, $j) for $points points\n";
+    print "Added word [$word] vertically starting at ($start_i, $j) for $points points\n";
     $state = useBonuses($state, $start_i, $j, 'V');
 
     return $state;
@@ -617,7 +617,7 @@ sub addWordHorizontallyToBoard {
         $j++;
     }
     my $points = computePoints($state, $i, $start_j, 'H', 1);
-    print "Added word [$word] horizontally starting at ($i, $j) for $points points\n";
+    print "Added word [$word] horizontally starting at ($i, $start_j) for $points points\n";
     $state = useBonuses($state, $i, $start_j, 'H');
 
     return $state;
